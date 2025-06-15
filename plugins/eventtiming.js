@@ -3,7 +3,6 @@
  * [Event Timing]{@link https://github.com/w3c/event-timing} proposal.
  *
  * This plugin calculates metrics such as:
- * * **First Input Delay** (FID): For the first interaction on the page, how responsive was it?
  * * **Interaction to Next Paint** (INP): Highest value of interaction latency on the page
  * * **Incremental Interaction to Next Paint** (IINP): Highest value of interaction latency for the current navigation
  *
@@ -15,19 +14,9 @@
  * * **Processing Latency**: How long it takes for all event handlers to execute
  * * **Presentation Latency**: How long it takes to draw the next frame (visual update)
  *
- * FID and INP/IINP measure different phases of interactions.
+ * INP/IINP measure different phases of interactions.
  *
  * ## First Input Delay
- *
- * If the user interacts with the page, the EventTiming plugin will measure how
- * long it took for the JavaScript event handler to fire (Input Latency).
- *
- * This can give you an indication of the page being otherwise busy and unresponsive
- * to the user if the callback is delayed.
- *
- * Processing Latency and Presentation Latency are not included in the First Input Delay calculation.
- *
- * This time (measured in milliseconds) is added to the beacon as `et.fid`.
  *
  * ## Interation to Next Paint
  *
@@ -66,7 +55,6 @@
  * This plugin adds the following parameters to the beacon:
  *
  * * `et.e`: Compressed EventTiming events
- * * `et.fid`: Observed First Input Delay
  * * `et.inp`: Interaction to Next Paint (full page, on Unload beacon)
  * * `et.inp.e`: INP target element
  * * `et.inp.t`: INP timestamp that the interaction occurred
@@ -202,16 +190,6 @@
     interactionsSinceLastBeacon: {},
 
     /**
-     * First Input Delay (calculated)
-     */
-    firstInputDelay: null,
-
-    /**
-     * Time to First Interaction
-     */
-    timeToFirstInteraction: null,
-
-    /**
      * Executed on `before_beacon`
      */
     onBeforeBeacon: function() {
@@ -246,14 +224,6 @@
 
       // clear until the next beacon
       impl.entries = [];
-
-      // First Input Delay
-      if (impl.firstInputDelay !== null) {
-        BOOMR.addVar("et.fid", Math.ceil(impl.firstInputDelay), true);
-
-        // should only go out on one beacon
-        impl.firstInputDelay = null;
-      }
 
       // Incremental Interaction to Next Paint
       var iinp = BOOMR.plugins.EventTiming.metrics
@@ -339,31 +309,6 @@
 
       // note we may add a few extra beyond maxEntries if the list is more than one
       impl.entries = impl.entries.concat(entries);
-    },
-
-    /**
-     * Fired on each FirstInput event
-     *
-     * @param {object[]} list List of EventTimings
-     */
-    onFirstInput: function(list) {
-      var i,
-          newEntries = list.getEntries();
-      var fid = newEntries[0];
-
-      impl.entries = impl.entries.concat(newEntries);
-
-      impl.firstInputDelay = Math.ceil(fid.processingStart - fid.startTime);
-
-      // TTFI -- can be offset by Prerendered activationStart
-      impl.timeToFirstInteraction = BOOMR.getPrerenderedOffset(Math.floor(fid.startTime));
-
-      // consider FID for INP
-      impl.interactionsSinceLastBeacon.fid = {
-        duration: Math.ceil(fid.duration),
-        target: BOOMR.utils.makeSelector(fid.target),
-        startTime: Math.floor(fid.startTime)
-      };
     }
   };
 
@@ -405,12 +350,6 @@
             type: ["event"],
             buffered: true,
             durationThreshold: impl.durationThreshold
-          });
-
-          impl.observerFirstInput = new w.PerformanceObserver(impl.onFirstInput);
-          impl.observerFirstInput.observe({
-            type: ["first-input"],
-            buffered: true
           });
         }
         catch (e) {
@@ -498,44 +437,6 @@
      * @memberof BOOMR.plugins.EventTiming
      */
     metrics: {
-      /**
-       * Calculates the EventTiming count
-       */
-      count: function() {
-        return impl.entries.length;
-      },
-
-      /**
-       * Calculates the average EventTiming duration
-       */
-      averageDuration: function() {
-        if (impl.entries.length === 0) {
-          return 0;
-        }
-
-        var sum = 0;
-
-        for (var i = 0; i < impl.entries.length; i++) {
-          sum += impl.entries[i].duration;
-        }
-
-        return sum / impl.entries.length;
-      },
-
-      /**
-       * Returns the observed First Input Delay
-       */
-      firstInputDelay: function() {
-        return impl.firstInputDelay;
-      },
-
-      /**
-       * Returns the observed Time to First Interaction
-       */
-      timeToFirstInteraction: function() {
-        return impl.timeToFirstInteraction;
-      },
-
       /**
        * Returns the Interaction to Next Paint metric for the session.
        */

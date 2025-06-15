@@ -244,13 +244,12 @@
  *
  * ## New Timers
  *
- * There are 4 new timers from the Continuity plugin that center around user
+ * There are 3 new timers from the Continuity plugin that center around user
  * interactions:
  *
  * * **Time to Visually Ready** (VR)
  * * **Time to Interactive** (TTI)
  * * **Time to First Interaction** (TTFI)
- * * **First Input Delay** (FID)
  *
  * _Time to Interactive_ (TTI), at it's core, is a measurement (timestamp) of when the
  * page was interact-able. In other words, at what point does the user both believe
@@ -446,33 +445,6 @@
  *
  * If the user does not interact with the page by the beacon, there will be no
  * `c.ttfi` on the beacon.
- *
- * ### First Input Delay
- *
- * If the user interacted with the page by the time the beacon was sent, the
- * Continuity plugin will also measure how long it took for the JavaScript
- * event handler to fire.  This measurement is referred to as the First Input Delay (FID).
- *
- * This can give you an indication of the page being otherwise busy and unresponsive
- * to the user if the callback is delayed.
- *
- * This time (measured in milliseconds) is added to the beacon as `c.fid`.
- *
- * If the {@link BOOMR.plugins.EventTiming `EventTiming`} plugin is included,
- * this measurement is deferred to the First Input Delay calculated by that plugin.
- * EventTiming is the most accurate way of measuring First Input Delay.
- *
- * If the {@link BOOMR.plugins.EventTiming `EventTiming`} plugin is not included, or the
- * browser does not support the EventTiming API, this plugin contains a polyfill to measure
- * FID based on the browser's interaction events: `click`, `mousedown`, `keydown`, `touchstart`,
- * `pointerdown` followed by `pointerup`.  Measuring FID via a polyfill is less accurate than
- * via EventTiming, and will generally result in higher FID values than EventTiming-based FID.
- *
- * Note: FID measurements are only gathered up to the point of the first Page Load beacon.  This
- * may differ from the Chrome User Experience (CrUX) FID measurements, which are taken up to the
- * point the page is unloaded.  This means boomerang's FID measurements are biased towards interactions
- * that happened up to the Page Load event (which is likely a busy time for the browser).  It's likely
- * that boomerang-based FID measurements will be higher than CrUX-based FID measurements as a result.
  *
  * ## Timelines
  *
@@ -704,7 +676,6 @@
  * * `c.f.m`: Minimum Frame Rate (Base-10) per `COLLECTION_INTERVAL`
  * * `c.f.s`: Frame Rate measurement start timestamp (Base-36)
  * * `c.f`: Average Frame Rate over the Frame Rate Duration (Base-10)
- * * `c.fid`: First Input Delay (milliseconds) (Base-10)
  * * `c.i.a`: Average interaction delay (milliseconds) (Base-10)
  * * `c.i.dc`: Delayed interaction count (Base-10)
  * * `c.i.dt`: Delayed interaction time (milliseconds) (Base-10)
@@ -3341,9 +3312,6 @@
     // Time of first interaction
     var timeToFirstInteraction = 0;
 
-    // First Input Delay
-    var firstInputDelay = null;
-
     // Interaction count
     var interactions = 0;
 
@@ -3369,7 +3337,7 @@
     var beaconMinTimeout = false;
     var beaconMaxTimeout = false;
 
-    // whether we've sent TTFI and FID already
+    // whether we've sent TTFI
     var sentTimers = false;
 
     /**
@@ -3415,11 +3383,6 @@
         }
 
         interactionsDelay += delay;
-
-        // log first input delay
-        if (firstInputDelay === null) {
-          firstInputDelay = Math.ceil(delay);
-        }
 
         // log as a delayed interaction
         if (delay > INTERACTION_MAX_DELAY) {
@@ -3514,29 +3477,16 @@
      * Analyzes Interactions
      */
     function analyze(startTime) {
-      var fid;
-
       impl.addToBeacon("c.i.dc", externalMetrics.interactionDelayed());
       impl.addToBeacon("c.i.dt", externalMetrics.interactionDelayedTime());
       impl.addToBeacon("c.i.a", externalMetrics.interactionAvgDelay());
 
-      // Only send FID and TTFI Timers once
+      // Only send TTFI Timer once
       if (!sentTimers) {
-        // defer to EventTiming's FID if available
-        if (BOOMR.plugins.EventTiming &&
-            BOOMR.plugins.EventTiming.is_enabled()) {
-          fid = BOOMR.plugins.EventTiming.metrics.firstInputDelay();
-        }
+        var ttfi = externalMetrics.timeToFirstInteraction();
 
-        if (!fid && firstInputDelay !== null) {
-          fid = externalMetrics.firstInputDelay();
-        }
-
-        if (typeof fid === "number") {
-          impl.addToBeacon("c.fid", Math.ceil(fid), true);
-
-          impl.addToBeacon("c.ttfi",
-            BOOMR.plugins.EventTiming.metrics.timeToFirstInteraction() || externalMetrics.timeToFirstInteraction());
+        if (ttfi !== 0) {
+          impl.addToBeacon("c.ttfi", ttfi);
 
           sentTimers = true;
         }
@@ -3591,15 +3541,6 @@
       if (timeToFirstInteraction) {
         // milliseconds since nav start
         return BOOMR.getPrerenderedOffset(Math.floor(timeToFirstInteraction - epoch));
-      }
-
-      // no data
-      return;
-    };
-
-    externalMetrics.firstInputDelay = function() {
-      if (firstInputDelay !== null) {
-        return firstInputDelay;
       }
 
       // no data
