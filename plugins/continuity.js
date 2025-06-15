@@ -56,41 +56,6 @@
  * The `Continuity` plugin has a variety of options to configure what it does (and
  * what it doesn't do):
  *
- * ### Monitoring Long Tasks
- *
- * If {@link BOOMR.plugins.Continuity.init `monitorLongTasks`} is turned on,
- * the Continuity plugin will monitor [Long Tasks](https://w3c.github.io/longtasks/)
- * (if the browser supports it).
- *
- * Long Tasks represent work being done on the browser's UI thread that monopolize
- * the UI thread and block other critical tasks from being executed (such as reacting
- * to user input).  Long Tasks can be caused by anything from JavaScript
- * execution, to parsing, to layout.  The browser fires `LongTask` events
- * (via the `PerformanceObserver`) when a task takes over 50 milliseconds to execute.
- *
- * Long Tasks are important to measure as a Long Task will block all other user input
- * (e.g. clicks, keys and scrolls).
- *
- * Long Tasks are powerful because they can give _attribution_ about what component
- * caused the task, i.e. the source JavaScript file.
- *
- * If {@link BOOMR.plugins.Continuity.init `monitorLongTasks`} is enabled:
- *
- * * A `PerformanceObserver` will be turned on to capture all Long Tasks that happen
- *     on the page.
- * * Long Tasks will be used to calculate _Time to Interactive_
- * * A log (`c.lt`), timeline (`c.t.longtask`) and other Long Task metrics (`c.lt.*`) will
- *     be added to the beacon (see Beacon Parameters details below)
- *
- * The log `c.lt` is a JSON (or JSURL) object of compressed `LongTask` data.  See
- * the source code for what each attribute maps to.
- *
- * Long Tasks are currently a cutting-edge browser feature and will not be available
- * in older browsers.
- *
- * Enabling Long Tasks should not have a performance impact on the page load experience,
- * as collecting of the tasks are via the lightweight `PerformanceObserver` interface.
- *
  * ### Monitoring Page Busy
  *
  * If {@link BOOMR.plugins.Continuity.init `monitorPageBusy`} is turned on,
@@ -1278,12 +1243,6 @@
     for (var j = startBucket; j <= endBucket; j++) {
       lastBucketVisited = j;
 
-      if (data.longtask && data.longtask[j]) {
-        // had a long task during this interval
-        idleIntervals = 0;
-        continue;
-      }
-
       if (data.fps && (!data.fps[j] || data.fps[j] < TIME_TO_INTERACTIVE_MIN_FPS_PER_INTERVAL)) {
         // No FPS or less than 20 FPS during this interval
         idleIntervals = 0;
@@ -1819,7 +1778,7 @@
       }
 
       // Calculate TTI
-      if (!data.longtask && !data.fps && !data.busy) {
+      if (!data.fps && !data.busy) {
         // can't calculate TTI
         return;
       }
@@ -2351,234 +2310,6 @@
       clearClsSources: clearClsSources,
       clearTopScore: clearTopScore,
       clearTopID: clearTopID,
-      analyze: analyze,
-      stop: stop,
-      onBeacon: onBeacon
-    };
-  };
-
-  /**
-   * Monitors LongTasks
-   */
-  var LongTaskMonitor = function(w, t) {
-    if (!w.PerformanceObserver || !w.PerformanceLongTaskTiming) {
-      return;
-    }
-
-    //
-    // Constants
-    //
-    /**
-     * LongTask attribution types
-     */
-    var ATTRIBUTION_TYPES = {
-      "unknown": 0,
-      "self": 1,
-      "same-origin-ancestor": 2,
-      "same-origin-descendant": 3,
-      "same-origin": 4,
-      "cross-origin-ancestor": 5,
-      "cross-origin-descendant": 6,
-      "cross-origin-unreachable": 7,
-      "multiple-contexts": 8
-    };
-
-    /**
-     * LongTask culprit attribution names
-     */
-    var CULPRIT_ATTRIBUTION_NAMES = {
-      "unknown": 0,
-      "script": 1,
-      "layout": 2
-    };
-
-    /**
-     * LongTask culprit types
-     */
-    var CULPRIT_TYPES = {
-      "unknown": 0,
-      "iframe": 1,
-      "embed": 2,
-      "object": 3
-    };
-
-    //
-    // Local Members
-    //
-
-    // PerformanceObserver
-    var perfObserver = new w.PerformanceObserver(onPerformanceObserver);
-
-    try {
-      perfObserver.observe({ entryTypes: ["longtask"] });
-    }
-    catch (e) {
-      // longtask not supported
-      return;
-    }
-
-    // register this type
-    t.register("longtask", COMPRESS_MODE_SMALL_NUMBERS);
-
-    // Long Tasks array
-    var longTasks = [];
-
-    // whether or not we're enabled
-    var enabled = true;
-
-    // total time of long tasks
-    var longTasksTime = 0;
-
-    /**
-     * Callback for the PerformanceObserver
-     */
-    function onPerformanceObserver(list) {
-      var entries, i;
-
-      if (!enabled) {
-        return;
-      }
-
-      // just capture all of the data for now, we'll analyze at the beacon
-      entries = list.getEntries();
-      Array.prototype.push.apply(longTasks, entries);
-
-      // add total time and count of long tasks
-      for (i = 0; i < entries.length; i++) {
-        longTasksTime += entries[i].duration;
-      }
-
-      // add to the timeline
-      t.increment("longtask", entries.length);
-    }
-
-    /**
-     * Gets the current list of tasks
-     *
-     * @returns {PerformanceEntry[]} Tasks
-     */
-    function getTasks() {
-      return longTasks;
-    }
-
-    /**
-     * Clears the Long Tasks
-     */
-    function clearTasks() {
-      longTasks = [];
-
-      longTasksTime = 0;
-    }
-
-    /**
-     * Analyzes LongTasks
-     */
-    function analyze(startTime) {
-      var i, j, task, obj,
-          objs = [],
-          attrs = [],
-          attr;
-
-      if (longTasks.length === 0) {
-        return;
-      }
-
-      for (i = 0; i < longTasks.length; i++) {
-        task = longTasks[i];
-
-        // compress the object a bit
-        obj = {
-          s: Math.round(task.startTime).toString(36),
-          d: Math.ceil(task.duration).toString(36),
-          n: ATTRIBUTION_TYPES[task.name] ? ATTRIBUTION_TYPES[task.name] : 0
-        };
-
-        attrs = [];
-
-        for (j = 0; j < task.attribution.length; j++) {
-          attr = task.attribution[j];
-
-          // skip script/iframe with no attribution
-          if (attr.name === "script" &&
-              attr.containerType === "iframe" &&
-              !attr.containerName &&
-            !attr.containerId && !attr.containerSrc) {
-            continue;
-          }
-
-          // only use containerName if not the same as containerId
-          var containerName = attr.containerName ? attr.containerName : undefined;
-          var containerId = attr.containerId ? attr.containerId : undefined;
-
-          if (containerName === containerId) {
-            containerName = undefined;
-          }
-
-          // only use containerSrc if containerId is undefined
-          var containerSrc = containerId === undefined ? attr.containerSrc : undefined;
-
-          attrs.push({
-            a: CULPRIT_ATTRIBUTION_NAMES[attr.name] ? CULPRIT_ATTRIBUTION_NAMES[attr.name] : 0,
-            t: CULPRIT_TYPES[attr.containerType] ? CULPRIT_TYPES[attr.containerType] : 0,
-            n: containerName,
-            i: containerId,
-            s: containerSrc
-          });
-        }
-
-        if (attrs.length > 0) {
-          obj.a = attrs;
-        }
-
-        objs.push(obj);
-      }
-
-      // add data to beacon
-      impl.addToBeacon("c.lt.n", externalMetrics.longTasksCount(), true);
-      impl.addToBeacon("c.lt.tt", externalMetrics.longTasksTime());
-
-      impl.addToBeacon("c.lt", compressJson(objs));
-    }
-
-    /**
-     * Disables the monitor
-     */
-    function stop() {
-      enabled = false;
-
-      perfObserver.disconnect();
-
-      clearTasks();
-    }
-
-    /**
-     * Resets on beacon
-     */
-    function onBeacon() {
-      clearTasks();
-    }
-
-    //
-    // External metrics
-    //
-
-    /**
-     * Total time of LongTasks (ms)
-     */
-    externalMetrics.longTasksTime = function() {
-      return longTasksTime;
-    };
-
-    /**
-     * Number of LongTasks
-     */
-    externalMetrics.longTasksCount = function() {
-      return longTasks.length;
-    };
-
-    return {
-      getTasks: getTasks,
-      clearTasks: clearTasks,
       analyze: analyze,
       stop: stop,
       onBeacon: onBeacon
@@ -3638,9 +3369,6 @@
     var beaconMinTimeout = false;
     var beaconMaxTimeout = false;
 
-    // whether or not a SPA nav is happening
-    var isSpaNav = false;
-
     // whether we've sent TTFI and FID already
     var sentTimers = false;
 
@@ -3711,7 +3439,7 @@
       // ms before sending the beacon, sliding the window if there are
       // more interactions, up to a max of INTERACTION_MAX_WAIT_FOR_BEACON ms.
       //
-      if (!isSpaNav && impl.afterOnloadMonitoring) {
+      if (impl.afterOnloadMonitoring) {
         // mark now as the latest interaction
         beaconEndTime = BOOMR.now();
 
@@ -3739,17 +3467,6 @@
         beaconMinTimeout = setTimeout(sendInteractionBeacon,
           INTERACTION_MIN_WAIT_FOR_BEACON);
       }
-    }
-
-    /**
-     * Fired on spa_init
-     */
-    function onSpaInit() {
-      // note we're in a SPA nav right now
-      isSpaNav = true;
-
-      // clear any interaction beacon timers
-      clearBeaconTimers();
     }
 
     /**
@@ -3845,9 +3562,6 @@
       beaconStartTime = 0;
       beaconEndTime = 0;
 
-      // no longer in a SPA nav
-      isSpaNav = false;
-
       // if we had queued an interaction beacon, but something else is
       // firing instead, use that data
       clearBeaconTimers();
@@ -3895,9 +3609,6 @@
     //
     // Setup
     //
-
-    // clear interaction beacon timer if a SPA is starting
-    BOOMR.subscribe("spa_init", onSpaInit, null, impl);
 
     return {
       interact: interact,
@@ -4362,10 +4073,6 @@
     //
     // Config
     //
-    /**
-     * Whether or not to monitor longTasks
-     */
-    monitorLongTasks: true,
 
     /**
      * Whether or not to monitor Page Busy
@@ -4455,11 +4162,6 @@
     complete: false,
 
     /**
-     * Whether or not this is an SPA app
-     */
-    isSpa: false,
-
-    /**
      * Whether Page Ready has fired or not
      */
     firedPageReady: false,
@@ -4482,16 +4184,10 @@
 
     /**
      * TTI method used (highest accuracy):
-     * * `lt` (LongTasks)
      * * `raf` (requestAnimationFrame)
      * * `b` (Page Busy polling)
      */
     ttiMethod: null,
-
-    /**
-     * LongTaskMonitor
-     */
-    longTaskMonitor: null,
 
     /**
      * PageBusyMonitor
@@ -4568,7 +4264,6 @@
      */
     monitors: [
       "timeline",
-      "longTaskMonitor",
       "pageBusyMonitor",
       "frameRateMonitor",
       "scrollMonitor",
@@ -4683,22 +4378,6 @@
     },
 
     /**
-     * Callback when an XHR load happens
-     *
-     * @param {object} data XHR data
-     */
-    onXhrLoad: function(data) {
-      // note this is an SPA for later
-      if (data && BOOMR.utils.inArray(data.initiator, BOOMR.constants.BEACON_TYPE_SPAS)) {
-        impl.isSpa = true;
-      }
-
-      if (data && data.initiator === "spa_hard") {
-        impl.onPageReady();
-      }
-    },
-
-    /**
      * Callback when the page is ready
      */
     onPageReady: function() {
@@ -4713,7 +4392,7 @@
         impl.afterOnloadMonitoring = true;
 
         // disable after the specified amount if not a SPA
-        if (!impl.isSpa && typeof impl.afterOnloadMaxLength === "number") {
+        if (typeof impl.afterOnloadMaxLength === "number") {
           setTimeout(function() {
             impl.afterOnloadMonitoring = false;
           }, impl.afterOnloadMaxLength);
@@ -4780,9 +4459,6 @@
     /**
      * Initializes the plugin.
      *
-     * @param {object} config Configuration
-     * @param {boolean} [config.Continuity.monitorLongTasks=true] Whether or not to
-     * monitor Long Tasks.
      * @param {boolean} [config.Continuity.monitorPageBusy=true] Whether or not to
      * monitor Page Busy.
      * @param {boolean} [config.Continuity.monitorFrameRate=true] Whether or not to
@@ -4822,7 +4498,7 @@
      */
     init: function(config) {
       BOOMR.utils.pluginConfig(impl, config, "Continuity",
-        ["monitorLongTasks", "monitorPageBusy", "monitorFrameRate", "monitorInteractions",
+        ["monitorPageBusy", "monitorFrameRate", "monitorInteractions",
           "monitorStats", "afterOnload", "afterOnloadMaxLength", "afterOnloadMinWait",
           "waitAfterOnload", "ttiWaitForFrameworkReady", "ttiWaitForHeroImages",
           "sendLog", "logMaxEntries", "sendTimeline", "monitorLayoutShifts"]);
@@ -4841,17 +4517,6 @@
       //
       if (BOOMR.window) {
         //
-        // LongTasks
-        //
-        if (impl.monitorLongTasks &&
-            BOOMR.window.PerformanceObserver &&
-            BOOMR.window.PerformanceLongTaskTiming) {
-          impl.longTaskMonitor = new LongTaskMonitor(BOOMR.window, impl.timeline);
-
-          impl.ttiMethod = "lt";
-        }
-
-        //
         // FPS
         //
         if (impl.monitorFrameRate &&
@@ -4868,7 +4533,7 @@
         //
         if (impl.monitorPageBusy &&
           BOOMR.window &&
-          (!BOOMR.window.PerformanceObserver || !BOOMR.window.PerformanceLongTaskTiming || !impl.monitorLongTasks) &&
+          (!BOOMR.window.PerformanceObserver || !BOOMR.window.PerformanceLongTaskTiming) &&
           // Don't use Page Busy for Firefox, as setInterval is de-prioritized during Page Load
           // https://bugzilla.mozilla.org/show_bug.cgi?id=1270059
           (BOOMR.window.navigator &&
@@ -4917,7 +4582,6 @@
       BOOMR.subscribe("before_beacon", impl.onBeforeBeacon, null, impl);
       BOOMR.subscribe("beacon", impl.onBeacon, null, impl);
       BOOMR.subscribe("page_ready", impl.onPageReady, null, impl);
-      BOOMR.subscribe("xhr_load", impl.onXhrLoad, null, impl);
 
       return this;
     },
