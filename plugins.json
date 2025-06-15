@@ -124,7 +124,8 @@
                 "plugins/compression.js",
                 "plugins/mq.js",
                 "plugins/eventtiming.js",
-                "plugins/bfcache.js"
+                "plugins/bfcache.js",
+                "plugins/basic-rum-init-config.js"
             ]
         },
         "cutting-edge-errors": {
