@@ -2592,45 +2592,6 @@ BOOMR_check_doc_domain();
       },
 
       /**
-       * Overwrites a function on the specified object.
-       *
-       * When the Boomerang IFRAME unloads, it will swap the old
-       * function back in, so calls to the functions are successful.
-       *
-       * If this isn't done, callers of the overwritten functions may still
-       * call into freed Boomerang code or the IFRAME that is partially unloaded,
-       * leading to "Freed script" errors or exceptions from accessing
-       * unloaded DOM properties.
-       *
-       * This tracking isn't needed if Boomerang is loaded in the root
-       * document, as everthing will be cleaned up along with Boomerang
-       * on unload.
-       *
-       * @param {object} obj Object whose property will be overwritten
-       * @param {string} functionName Function name
-       * @param {function} newFn New function
-       */
-      overwriteNative: function(obj, functionName, newFn) {
-        // bail if the object doesn't exist
-        if (!obj || !newFn) {
-          return;
-        }
-
-        // we only need to keep track if we're running Boomerang in
-        // an IFRAME
-        if (BOOMR.boomerang_frame !== BOOMR.window) {
-          // note we overwrote this
-          impl.nativeOverwrites.push({
-            obj: obj,
-            functionName: functionName,
-            origFn: obj[functionName]
-          });
-        }
-
-        obj[functionName] = newFn;
-      },
-
-      /**
        * Determines if the given input is an Integer.
        * Relies on standard Number.isInteger() function that available
        * is most browsers except IE. For IE, this relies on the polyfill
@@ -4872,52 +4833,6 @@ BOOMR_check_doc_domain();
         "=" + encodeURIComponent(value);
 
       return result;
-    },
-
-    /**
-     * Gets the latest ResourceTiming entry for the specified URL.
-     *
-     * Default sort order is chronological startTime.
-     *
-     * @param {string} url Resource URL
-     * @param {function} [sort] Sort the entries before returning the last one
-     * @param {function} [filter] Filter the entries. Will be applied before sorting
-     *
-     * @returns {PerformanceEntry|undefined} Entry, or undefined if ResourceTiming is not
-     *  supported or if the entry doesn't exist
-     *
-     * @memberof BOOMR
-     */
-    getResourceTiming: function(url, sort, filter) {
-      var entries,
-          p = BOOMR.getPerformance();
-
-      try {
-        if (p && typeof p.getEntriesByName === "function") {
-          entries = p.getEntriesByName(url);
-
-          if (!entries || !entries.length) {
-            return;
-          }
-
-          if (typeof filter === "function") {
-            entries = BOOMR.utils.arrayFilter(entries, filter);
-
-            if (!entries || !entries.length) {
-              return;
-            }
-          }
-
-          if (entries.length > 1 && typeof sort === "function") {
-            entries.sort(sort);
-          }
-
-          return entries[entries.length - 1];
-        }
-      }
-      catch (e) {
-        BOOMR.warn("getResourceTiming:" + e);
-      }
     },
 
     /**
