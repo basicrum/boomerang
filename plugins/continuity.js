@@ -7,8 +7,7 @@
  * ## Approach
  *
  * The goal of the Continuity plugin is to capture the important aspects of your
- * visitor's overall _user experience_ during page load and beyond.  For example, the
- * plugin measures when the site appeared _Visually Ready_, and when it was _Interactive_.
+ * visitor's overall _user experience_ during page load and beyond.
  *
  * In addition, the Continuity plugin captures in-page interactions (such as keys,
  * clicks and scrolls), and monitors how the site performed when responding to
@@ -21,15 +20,8 @@
  * Here are some of the metrics that the Continuity plugin captures:
  *
  * * Timers:
- *     * **Time to Visually Ready**: When did the user feel like they could interact
- *         with the site?  When did it look ready? (see below for details)
- *     * **Time to Interactive**: After the page was Visually Ready, when was the
- *         first time the user could have interacted with the site, and had a
- *         good (performant) experience? (see below for details)
  *     * **Time to First Interaction**: When was the first time the user tried to
  *         interact (key, click or scroll) with the site?
- *     * **First Input Delay**: For the first interaction on the page, how
- *         responsive was it?
  * * Interaction metrics:
  *     * **Interactions**: Keys, mouse movements, clicks, and scrolls (counts and
  *         an event log)
@@ -40,7 +32,6 @@
  *     * **Frame Rate data**: FPS during page load, minimum FPS, number of long frames
  *     * **Long Task data**: Number of Long Tasks, how much time they took, attribution
  *         to what caused them
- *     * **Page Busy**: Measurement of the page's busyness
  *
  * This data is captured during the page load, as well as when the user later
  * interacts with the site (if configured via
@@ -55,47 +46,6 @@
  *
  * The `Continuity` plugin has a variety of options to configure what it does (and
  * what it doesn't do):
- *
- * ### Monitoring Page Busy
- *
- * If {@link BOOMR.plugins.Continuity.init `monitorPageBusy`} is turned on,
- * the Continuity plugin will measure Page Busy.
- *
- * Page Busy is a way of measuring how much work was being done on the page (how "busy"
- * it was).  Page Busy is calculated via `setInterval()` polling: a timeout is scheduled
- * on the page at a regular interval, and _busyness_ is detected if that timeout does
- * not fire at the time it was expected to.
- *
- * Page Busy is a percentage -- 100% means that the browser was entirely busy doing other
- * things, while 0% means the browser was idle.
- *
- * Page Busy is _just an estimate_, as it uses sampling.  As an example, if you have
- * a high number of small tasks that execute frequently, Page Busy might run at
- * a frequency that it either detects 100% (busy) or 0% (idle).
- *
- * Page Busy is not the most efficient way of measuring what the browser is doing,
- * but since it is calculated via `setInterval()`, it is supported in all browsers.
- * The Continuity plugin currently measures Page Busy by polling every 32 milliseconds.
- * Page Busy is disabled if Long Tasks are supported in the browser.
- *
- * Page Busy can be an indicator of how likely the user will have a good experience
- * when they interact with it. If Page Busy is 100%, the user may see the page lag
- * behind their input.
- *
- * If {@link BOOMR.plugins.Continuity.init `monitorPageBusy`} is enabled:
- *
- * * The Page Busy monitor will be active (polling every 32 milliseconds) (unless
- *     Long Tasks is supported and enabled)
- * * Page Busy will be used to calculate _Time to Interactive_
- * * A timeline (`c.t.busy`) and the overall Page Busy % (`c.b`) will be added to the
- *     beacon (see Beacon Parameters details below)
- *
- * Enabling Page Busy monitoring should not have a noticeable effect on the page load
- * experience.  The 32-millisecond polling is lightweight and should barely register
- * on JavaScript CPU profiles.
- *
- * Page Busy is disabled in Firefox, as that browser
- * [de-prioritizes](https://bugzilla.mozilla.org/show_bug.cgi?id=1270059) `setInterval()` during page load.
  *
  * ### Monitoring Frame Rate
  *
@@ -114,7 +64,6 @@
  * If {@link BOOMR.plugins.Continuity.init `monitorFrameRate`} is enabled:
  *
  * * `requestAnimationFrame` will be used to measure Frame Rate
- * * Frame Rate will be used to calculate _Time to Interactive_
  * * A timeline (`c.t.fps`) and many Frame Rate metrics (`c.f.*`) will be added to the
  *     beacon (see Beacon Parameters details below)
  *
@@ -241,191 +190,6 @@
  *
  * This option is on by default, and can be disabled via the
  * {@link BOOMR.plugins.Continuity.init `monitorLayoutShifts`} config option.
- *
- * ## New Timers
- *
- * There are 3 new timers from the Continuity plugin that center around user
- * interactions:
- *
- * * **Time to Visually Ready** (VR)
- * * **Time to Interactive** (TTI)
- * * **Time to First Interaction** (TTFI)
- *
- * _Time to Interactive_ (TTI), at it's core, is a measurement (timestamp) of when the
- * page was interact-able. In other words, at what point does the user both believe
- * the page could be interacted with, and if they happened to try to interact with
- * it then, would they have a good experience?
- *
- * To calculate Time to Interactive, we need to figure out two things:
- *
- * * Does the page appear to the visitor to be interactable?
- *     * We'll use one or more Visually Ready Signals to determine this
- * * If so, what's the first time a user could interact with the page and have a good
- *     experience?
- *     * We'll use several Time to Interactive Signals to determine this
- *
- * ### Visually Ready
- *
- * For the first question, "does the page appear to be interactable?", we need to
- * determine when the page would _look_ to the user like they _could_ interact with it.
- *
- * It's only after this point that TTI could happen. Think of Visually Ready (VR) as
- * the anchor point of TTI -- it's the earliest possible timestamp in the page's
- * lifecycle that TTI could happen.
- *
- * We have a few signals that might be appropriate to use as Visually Ready:
- * * First Paint (if available)
- *     * We should wait at least for the first paint on the page
- *     * i.e. IE's [`msFirstPaint`](https://msdn.microsoft.com/en-us/library/ff974719)
- *         or Chrome's `firstPaintTime`
- *     * These might just be paints of white, so they're not the only signal we should use
- * * First Contentful Paint (if available)
- *     * Via [PaintTiming](https://www.w3.org/TR/paint-timing/)
- * * Largest Contentful Paint (if available)
- *     * Via [Largest Contentful Paint API](https://wicg.github.io/largest-contentful-paint/)
- * * [domContentLoadedEventEnd](https://msdn.microsoft.com/en-us/library/ff974719)
- *     * "The DOMContentLoaded event is fired when the initial HTML document has been
- *         completely loaded and parsed, without waiting for stylesheets, images,
- *         and subframes to finish loading"
- *     * This happens after `domInteractive`
- *     * Available in NavigationTiming browsers via a timestamp and all other
- *         browser if we're on the page in time to listen for readyState change events
- * * Hero Images (if defined)
- *     * Instead of tracking all Above-the-Fold images, it could be useful to know
- *         which specific images are important to the site owner
- *     * Defined via a simple CSS selector (e.g. `.hero-images`)
- *     * Can be measured via ResourceTiming
- *     * Will add Hero Images Ready `c.tti.hi` to the beacon
- * * "My Framework is Ready" (if defined)
- *     * A catch-all for other things that we can't automatically track
- *     * This would be an event or callback from the page author saying their page is ready
- *     * They could fire this for whatever is important to them, i.e. when their page's
- *         click handlers have all registered
- *     * Will add Framework Ready `c.tti.fr` to the beacon
- *
- * Once the last of all of the above have happened, Visually Ready has occurred.
- *
- * Visually Ready will add `c.tti.vr` to the beacon.
- *
- * Visually Ready is only included on regular Page Load and Single Page App Hard navigation beacons.  It is not
- * suitable for Single Page App Soft navigation beacons as the page has already been visually ready at the start
- * of the soft navigation.
- *
- * #### Controlling Visually Ready via Framework Ready
- *
- * There are two additional options for controlling when Visually Ready happens:
- * via Framework Ready or Hero Images.
- *
- * If you want to wait for your framework to be ready (e.g. your SPA has loaded or
- * a button has a click handler registered), you can add an
- * option {@link BOOMR.plugins.Continuity.init `ttiWaitForFrameworkReady`}.
- *
- * Once enabled, TTI won't be calculated until the following is called:
- *
- * ```
- * // my framework is ready
- * if (BOOMR && BOOMR.plugins && BOOMR.plugins.Continuity) {
- *     BOOMR.plugins.Continuity.frameworkReady();
- * }
- * ```
- *
- * #### Controlling Visually Ready via Hero Images
- *
- * If you want to wait for your hero/main images to be loaded before Visually Ready
- * is measured, you can give the plugin a CSS selector via
- * {@link BOOMR.plugins.Continuity.init `ttiWaitForHeroImages`}.
- * If set, Visually Ready will be delayed until all IMGs that match that selector
- * have loaded, e.g.:
- *
- * ```
- * BOOMR.init({
- *   ...
- *   Continuity: {
- *     enabled: true,
- *     ttiWaitForHeroImages: ".hero-image"
- *   }
- * });
- * ```
- *
- * Note this only works in ResourceTiming-supported browsers (and won't be used in
- * older browsers).
- *
- * If no images match the CSS selector at Page Load, this setting will be ignored
- * (the plugin will not wait for a match).
- *
- * ### Time to Interactive
- *
- * After the page is Visually Ready for the user, if they were to try to interact
- * with the page (click, scroll, type), when would they have a good experience (i.e.
- * the page responded in a satisfactory amount of time)?
- *
- * We can use some of the signals below, when available:
- *
- * * Frame Rate (FPS)
- *     * Available in all modern browsers: by using `requestAnimationFrame` we can
- *         get a sense of the overall frame rate (FPS)
- *     * To ensure a "smooth" page load experience, ideally the page should never drop
- *         below 20 FPS.
- *     * 20 FPS gives about 50ms of activity to block the main thread at any one time
- * * Long Tasks
- *     * Via the PerformanceObserver, a Long Tasks fires any time the main thread
- *         was blocked by a task that took over 50ms such as JavaScript, layout, etc
- *     * Great indicator both that the page would not have been interact-able and
- *         in some cases, attribution as to why
- * * Page Busy via `setInterval`
- *     * By measuring how long it takes for a regularly-scheduled callback to fire,
- *         we can detect other tasks that got in the way
- *     * Can give an estimate for Page Busy Percentage (%)
- *     * Available in every browser
- * * Delayed interactions
- *     * If the user interacted with the page and there was a delay in responding
- *         to the input
- *
- * The {@link BOOMR.plugins.Continuity.init `waitAfterOnload`} option will delay
- * the beacon for up to that many milliseconds if Time to Interactive doesn't
- * happen by the browser's `load` event.  You shouldn't set it too high, or
- * the likelihood that the page load beacon will be lost increases (because of
- * the user navigating away first, or closing their browser). If
- * {@link BOOMR.plugins.Continuity.init `waitAfterOnload`} is reached and TTI
- * hasn't happened yet, the beacon will be sent immediately (missing the TTI timer).
- *
- * If you set {@link BOOMR.plugins.Continuity.init `waitAfterOnload`} to `0`
- * (or it's not set), Boomerang will send the beacon at the regular page load
- * event.  If TTI didn't yet happen, it won't be reported.
- *
- * If you want to set {@link BOOMR.plugins.Continuity.init `waitAfterOnload`},
- * we'd recommend a value between `1000` and `5000` (1 and 5 seconds).
- *
- * Time to Interaction will add `c.tti` to the beacon.  It will also add `c.tti.m`,
- * which is the higest-accuracy method available for TTI calculation: `lt` (Long Tasks),
- * `raf` (FPS), or `b` (Page Busy).
- *
- * Time to Interaction is only included on regular Page Load and Single Page App Hard navigation beacons.  It is not
- * suitable for Single Page App Soft navigation beacons as the page is already interactive at the start of
- * the soft navigation.
- *
- * Note: TTI isn't as reliable of a metric on Firefox, as it does not yet support
- * Long Tasks (as of 2022), and has bugs with Page Busy monitoring (it intentionally delays setTimeouts
- * during Page Load), so only Frame Rate monitoring is available.
- *
- * #### Algorithm
- *
- * Putting these two timers together, here's how we measure Visually Ready and
- * Time to Interactive:
- *
- * 1. Determine the highest Visually Ready timestamp (VRTS):
- *     * Largest Contentful Paint (if available)
- *     * First Contentful Paint (if available)
- *     * First Paint (if available)
- *     * `domContentLoadedEventEnd`
- *     * Hero Images are loaded (if configured)
- *     * Framework Ready (if configured)
- *
- * 2. After VRTS, calculate Time to Interactive by finding the first period of
- *     500ms where all of the following are true:
- *     * There were no Long Tasks
- *     * The FPS was always above 20 (if available)
- *     * Page Busy was less than 10% (if the above aren't available)
  *
  * ### Time to First Interaction
  *
@@ -655,7 +419,6 @@
  * The following beacon parameters are affected by Prerendering and will be offset by the
  * `activationStart` time (if any):
  *
- * * `c.tti` (Time to Interactive)
  * * `c.ttfi` (Time to First Interaction)
  *
  * ## Beacon Parameters
@@ -707,11 +470,6 @@
  * * `c.t.scrollpct`:Scroll percentage (of full page) timeline (compressed)
  * * `c.t.mut`: DOM Mutations timeline (compressed)
  * * `c.ttfi`: Time to First Interaction (milliseconds) (Base-10)
- * * `c.tti.fr`: Framework Ready (milliseconds) (Base-10)
- * * `c.tti.hi`: Hero Images ready (milliseconds) (Base-10)
- * * `c.tti.m`: Time to Interactive Method (`lt`, `raf`, `b`)
- * * `c.tti.vr`: Visually Ready (milliseconds) (Base-10)
- * * `c.tti`: Time to Interactive (milliseconds) (Base-10)
  *
  * @class BOOMR.plugins.Continuity
  */
@@ -739,12 +497,6 @@
    * a SPA.
    */
   var DEFAULT_AFTER_ONLOAD_MAX_LENGTH = 60000;
-
-  /**
-   * Time to Interactive polling period (after onload, how often we'll
-   * check to see if TTI fired yet)
-   */
-  var TIME_TO_INTERACTIVE_WAIT_POLL_PERIOD = 500;
 
   /**
    * Compression Modes
@@ -817,35 +569,6 @@
    */
   function debug(msg) {
     BOOMR.debug(msg, "Continuity");
-  }
-
-  /**
-   * Compress JSON to a string for a URL parameter in the best way possible.
-   *
-   * If BOOMR.utils.Compression.jsUrl, or UserTimingCompression is available (which has JSURL),
-   * use that.  The data will start with the character `~`.
-   *
-   * Otherwise, use JSON.stringify.  The data will start with the character `{`.
-   *
-   * @param {object} obj Data
-   *
-   * @returns {string} Compressed data
-   */
-  function compressJson(data) {
-    var jsUrlFn = (BOOMR.utils.Compression && BOOMR.utils.Compression.jsUrl) ||
-      (window.UserTimingCompression && window.UserTimingCompression.jsUrl) ||
-      (BOOMR.window.UserTimingCompression && BOOMR.window.UserTimingCompression.jsUrl);
-
-    if (jsUrlFn) {
-      return jsUrlFn(data);
-    }
-    else if (window.JSON) {
-      return JSON.stringify(data);
-    }
-    else {
-      // JSON isn't available
-      return "";
-    }
   }
 
   /**
@@ -1165,109 +888,6 @@
   }
   /* END_DEBUG */
 
-  //
-  // Constants
-  //
-  /**
-   * Number of "idle" intervals (of COLLECTION_INTERVAL ms) before
-   * Time to Interactive is called.
-   *
-   * 5 * 100 = 500ms (of no long tasks > 50ms and FPS >= 20)
-   */
-  var TIME_TO_INTERACTIVE_IDLE_INTERVALS = 5;
-
-  /**
-   * For Time to Interactive, minimum FPS.
-   *
-   * ~20 FPS or max ~50ms blocked
-   */
-  var TIME_TO_INTERACTIVE_MIN_FPS = 20;
-
-  /**
-   * For Time to Interactive, minimum FPS per COLLECTION_INTERVAL.
-   */
-  var TIME_TO_INTERACTIVE_MIN_FPS_PER_INTERVAL =
-    TIME_TO_INTERACTIVE_MIN_FPS / (1000 / COLLECTION_INTERVAL);
-
-  /**
-   * For Time to Interactive, max Page Busy (if LongTasks aren't supported)
-   *
-   * ~50%
-   */
-  var TIME_TO_INTERACTIVE_MAX_PAGE_BUSY = 50;
-
-  /**
-   * Determines TTI based on input timestamps, buckets and data
-   *
-   * @param {number} startTime Start time
-   * @param {number} visuallyReady Visually Ready time
-   * @param {number} startBucket Start bucket
-   * @param {number} endBucket End bucket
-   * @param {number} idleIntervals Idle intervals to start with
-   * @param {object} data Long Task, FPS, Busy and Interaction Data buckets
-   */
-  function determineTti(startTime, visuallyReady, startBucket, endBucket, idleIntervals, data) {
-    var tti = 0,
-        lastBucketVisited = startBucket,
-        haveSeenBusyData = false;
-
-    for (var j = startBucket; j <= endBucket; j++) {
-      lastBucketVisited = j;
-
-      if (data.fps && (!data.fps[j] || data.fps[j] < TIME_TO_INTERACTIVE_MIN_FPS_PER_INTERVAL)) {
-        // No FPS or less than 20 FPS during this interval
-        idleIntervals = 0;
-        continue;
-      }
-
-      if (data.busy) {
-        // Page Busy monitor is activated
-
-        if (haveSeenBusyData && typeof data.busy[j] === "undefined") {
-          // We saw previous Busy data, but no Busy data filled in for this bucket yet!
-          // Break and try again later.
-          // This could happen if the PageBusyMonitor timer hasn't fired for this bucket yet.
-          lastBucketVisited--;
-          break;
-        }
-        else if (!haveSeenBusyData && typeof data.busy[j] !== "undefined") {
-          haveSeenBusyData = true;
-        }
-
-        if (data.busy[j] > TIME_TO_INTERACTIVE_MAX_PAGE_BUSY) {
-          // Too busy
-          idleIntervals = 0;
-          continue;
-        }
-      }
-
-      if (data.interdly && data.interdly[j]) {
-        // a delayed interaction happened
-        idleIntervals = 0;
-        continue;
-      }
-
-      // this was an idle interval
-      idleIntervals++;
-
-      // if we've found enough idle intervals, mark TTI as the beginning
-      // of this idle period
-      if (idleIntervals >= TIME_TO_INTERACTIVE_IDLE_INTERVALS) {
-        tti = startTime + ((j + 1 - TIME_TO_INTERACTIVE_IDLE_INTERVALS) * COLLECTION_INTERVAL);
-
-        // ensure we don't set TTI before TTVR
-        tti = Math.max(tti, visuallyReady);
-        break;
-      }
-    }
-
-    return {
-      tti: tti,
-      idleIntervals: idleIntervals,
-      lastBucketVisited: lastBucketVisited
-    };
-  }
-
   /**
    * Timeline data
    *
@@ -1276,7 +896,6 @@
    * * Keeping track of counts of events that happen over time (in
    *   COLLECTION_INTERVAL intervals).
    * * Keeps a log of raw events.
-   * * Calculates Time to Interactive (TTI) and Visually Ready.
    */
   var Timeline = function(startTime) {
     //
@@ -1292,23 +911,8 @@
     // timeline log
     var dataLog = [];
 
-    // time-to-interactive timestamp
-    var tti = 0;
-
-    // visually ready timestamp
-    var visuallyReady = 0;
-
-    // hero images timestamp
-    var heroImagesReady = 0;
-
-    // whether or not to add Visually Ready to the next beacon
-    var addVisuallyReadyToBeacon = true;
-
     // last bucket that was analyzed for TTI
     var lastBucketVisited = false;
-
-    // number of idle intervals up to lastBucketVisited
-    var idleIntervals = 0;
 
     // check for pre-Boomerang FPS log
     if (BOOMR.fpsLog && BOOMR.fpsLog.length) {
@@ -1474,157 +1078,6 @@
     }
 
     /**
-     * Given a CSS selector, determine the load time of any IMGs matching
-     * that selector and/or IMGs underneath it.
-     *
-     * @param {string} selector CSS selector
-     *
-     * @returns {number} Last image load time
-     */
-    function determineImageLoadTime(selector) {
-      var combinedSelector, elements,
-          latestTs = 0,
-          i, j, src, entries, a;
-
-      // check to see if we have querySelectorAll available
-      if (!BOOMR.window ||
-          !BOOMR.window.document ||
-          typeof BOOMR.window.document.querySelectorAll !== "function") {
-        // can't use querySelectorAll
-        return 0;
-      }
-
-      // check to see if we have ResourceTiming available
-      if (!p ||
-          typeof p.getEntriesByType !== "function") {
-        // can't use ResourceTiming
-        return 0;
-      }
-
-      // find any images matching this selector or underneath this selector
-      combinedSelector = selector + ", " + selector + " * img, " + selector + " * image";
-
-      // use QSA to find all matching
-      elements = BOOMR.window.document.querySelectorAll(combinedSelector);
-
-      if (elements && elements.length) {
-        for (i = 0; i < elements.length; i++) {
-          src = elements[i].currentSrc ||
-            elements[i].src ||
-            (typeof elements[i].getAttribute === "function" && elements[i].getAttribute("xlink:href"));
-
-          // if src if not defined, look for it in css background image
-          if (!src) {
-            if (typeof BOOMR.window.getComputedStyle === "function") {
-              var bgStyle = BOOMR.window.getComputedStyle(elements[i]) &&
-                BOOMR.window.getComputedStyle(elements[i]).getPropertyValue("background");
-
-              if (bgStyle) {
-                var bgImgUrl = bgStyle.match(/url\(["']?([^"']*)["']?\)/);
-
-                if (bgImgUrl && bgImgUrl.length > 0) {
-                  // get the canonical URL if needed
-                  a = a || document.createElement("a");
-                  a.href = bgImgUrl[1];
-
-                  src = a.href;
-                }
-              }
-            }
-          }
-
-          if (src) {
-            entries = p.getEntriesByName(src);
-
-            if (entries && entries.length) {
-              for (j = 0; j < entries.length; j++) {
-                latestTs = Math.max(latestTs, entries[j].responseEnd);
-              }
-            }
-          }
-        }
-      }
-
-      return latestTs ? Math.floor(latestTs + epoch) : 0;
-    }
-
-    /**
-     * Determine Visually Ready time.  This is the last of:
-     * 1. Largest Contentful Paint (if available)
-     * 2. First Contentful Paint (if available)
-     * 3. First Paint (if available)
-     * 4. domContentLoadedEventEnd
-     * 5. Hero Images are loaded (if configured)
-     * 6. Framework Ready (if configured)
-     *
-     * @returns {number|undefined} Timestamp, if everything is ready, or
-     *    `undefined` if not
-     */
-    function determineVisuallyReady() {
-      var latestTs = 0;
-
-      // start with Framework Ready (if configured)
-      if (impl.ttiWaitForFrameworkReady) {
-        if (!impl.frameworkReady) {
-          return;
-        }
-
-        latestTs = impl.frameworkReady;
-      }
-
-      // use Largest/First Contentful Paint (if available) or
-      if (BOOMR.plugins.PaintTiming &&
-          BOOMR.plugins.PaintTiming.is_supported() &&
-          p &&
-          p.timeOrigin) {
-        var fp = BOOMR.plugins.PaintTiming.getTimingFor("largest-contentful-paint");
-
-        if (!fp) {
-          fp = BOOMR.plugins.PaintTiming.getTimingFor("first-contentful-paint");
-        }
-
-        if (!fp) {
-          // or get First Paint directly from PaintTiming
-          fp = BOOMR.plugins.PaintTiming.getTimingFor("first-paint");
-        }
-
-        if (fp) {
-          latestTs = Math.max(latestTs, Math.round(fp + p.timeOrigin));
-        }
-      }
-      else if (p && p.timing && p.timing.msFirstPaint) {
-        // use IE's First Paint (if available) or
-        latestTs = Math.max(latestTs, p.timing.msFirstPaint);
-      }
-      else if (BOOMR.window &&
-          BOOMR.window.chrome &&
-          typeof BOOMR.window.chrome.loadTimes === "function") {
-        // use Chrome's firstPaintTime (if available)
-        var loadTimes = BOOMR.window.chrome.loadTimes();
-
-        if (loadTimes && loadTimes.firstPaintTime) {
-          latestTs = Math.max(latestTs, loadTimes.firstPaintTime * 1000);
-        }
-      }
-
-      // Use domContentLoadedEventEnd (if available)
-      if (p && p.timing && p.timing.domContentLoadedEventEnd) {
-        latestTs = Math.max(latestTs, p.timing.domContentLoadedEventEnd);
-      }
-
-      // look up any Hero Images (if configured)
-      if (impl.ttiWaitForHeroImages) {
-        heroImagesReady = determineImageLoadTime(impl.ttiWaitForHeroImages);
-
-        if (heroImagesReady) {
-          latestTs = Math.max(latestTs, heroImagesReady);
-        }
-      }
-
-      return latestTs;
-    }
-
-    /**
      * Adds the compressed data log to the beacon
      */
     function addCompressedLogToBeacon() {
@@ -1704,13 +1157,10 @@
     }
 
     /**
-     * Analyzes metrics such as Time To Interactive
      *
      * @param {number} timeOfLastBeacon Time we last sent a beacon
      */
     function analyze(timeOfLastBeacon) {
-      var endBucket = getTimeBucket();
-
       // add log
       if (impl.sendLog && typeof timeOfLastBeacon !== "undefined") {
         addCompressedLogToBeacon();
@@ -1720,122 +1170,11 @@
       if (impl.sendTimeline && typeof timeOfLastBeacon !== "undefined") {
         addCompressedTimelineToBeacon(timeOfLastBeacon);
       }
-
-      if (tti) {
-        return;
-      }
-
-      // need to get Visually Ready first
-      if (!visuallyReady) {
-        visuallyReady = determineVisuallyReady();
-
-        if (!visuallyReady) {
-          return;
-        }
-      }
-
-      if (addVisuallyReadyToBeacon) {
-        // add Visually Ready to the beacon
-        impl.addToBeacon("c.tti.vr", externalMetrics.timeToVisuallyReady());
-
-        // add Framework Ready to the beacon
-        impl.addToBeacon("c.tti.fr", externalMetrics.timeToFrameworkReady());
-
-        // add Hero Images Ready to the beacon
-        impl.addToBeacon("c.tti.hi", externalMetrics.timeToHeroImagesReady());
-
-        // only add to the first beacon
-        addVisuallyReadyToBeacon = false;
-      }
-
-      // Calculate TTI
-      if (!data.fps && !data.busy) {
-        // can't calculate TTI
-        return;
-      }
-
-      // determine the first bucket we'd use
-      var startBucket;
-
-      if (lastBucketVisited === false) {
-        // haven't gone over any buckets yet
-        startBucket = Math.max(Math.floor((visuallyReady - startTime) / COLLECTION_INTERVAL), 0);
-      }
-      else {
-        // already looked at some buckets, continue with the next one
-        startBucket = lastBucketVisited + 1;
-      }
-
-      // calculate TTI
-      var results = determineTti(startTime, visuallyReady, startBucket, endBucket, idleIntervals, data);
-
-      if (results) {
-        // save results for next time
-        idleIntervals = results.idleIntervals;
-        lastBucketVisited = results.lastBucketVisited;
-
-        // we were able to calculate a TTI
-        if (results.tti > 0) {
-          tti = results.tti;
-
-          impl.addToBeacon("c.tti", externalMetrics.timeToInteractive());
-        }
-      }
     }
 
     //
     // External metrics
     //
-
-    /**
-     * Time to Interactive
-     */
-    externalMetrics.timeToInteractive = function() {
-      if (tti) {
-        // milliseconds since nav start, offset by Prerendered Activation Start (if it happened)
-        return BOOMR.getPrerenderedOffset(tti - epoch);
-      }
-
-      // no data
-      return;
-    };
-
-    /**
-     * Time to Visually Ready
-     */
-    externalMetrics.timeToVisuallyReady = function() {
-      if (visuallyReady) {
-        // milliseconds since nav start
-        return visuallyReady - epoch;
-      }
-
-      // no data
-      return;
-    };
-
-    /**
-     * Time to Hero Images Ready
-     */
-    externalMetrics.timeToHeroImagesReady = function() {
-      if (impl.ttiWaitForHeroImages && heroImagesReady) {
-        return heroImagesReady - epoch;
-      }
-
-      // not configured or not set
-      return;
-    };
-
-    /**
-     * Time to Framework Ready
-     */
-    externalMetrics.timeToFrameworkReady = function() {
-      if (impl.ttiWaitForFrameworkReady && impl.frameworkReady) {
-        return impl.frameworkReady - epoch;
-      }
-
-      // not configured or not set
-      return;
-    };
 
     externalMetrics.log = function() {
       return dataLog;
@@ -1872,9 +1211,6 @@
 
       // reset the data log
       dataLog = [];
-
-      // only add Visually Ready to the first beacon if available
-      addVisuallyReadyToBeacon = false;
     }
 
     return {
@@ -2281,200 +1617,6 @@
       clearClsSources: clearClsSources,
       clearTopScore: clearTopScore,
       clearTopID: clearTopID,
-      analyze: analyze,
-      stop: stop,
-      onBeacon: onBeacon
-    };
-  };
-
-  /**
-   * Monitors Page Busy if LongTasks isn't supported
-   */
-  var PageBusyMonitor = function(w, t) {
-    // register this type
-    t.register("busy", COMPRESS_MODE_PERCENT);
-
-    //
-    // Constants
-    //
-
-    /**
-     * How frequently to poll (ms).
-     *
-     * IE and Edge clamp polling to the nearest 16ms.  With 32ms, we
-     * will see approximately 3 polls per 100ms.
-     */
-    var POLLING_INTERVAL = 32;
-
-    /**
-     * How much deviation from the expected time to allow (ms)
-     */
-    var ALLOWED_DEVIATION_MS = 4;
-
-    /**
-     * How often to report on Page Busy (ms)
-     */
-    var REPORT_INTERVAL = 100;
-
-    /**
-     * How many polls there were per-report
-     */
-    var POLLS_PER_REPORT =
-        Math.floor(REPORT_INTERVAL / POLLING_INTERVAL);
-
-    /**
-     * How many missed polls should we go backwards? (10 seconds worth)
-     */
-    var MAX_MISSED_REPORTS = 100;
-
-    //
-    // Local Members
-    //
-
-    // last time we ran
-    var last = BOOMR.now();
-
-    // total callbacks
-    var total = 0;
-
-    // late callbacks
-    var late = 0;
-
-    // overall total and late callbacks (reset on beacon)
-    var overallTotal = 0;
-    var overallLate = 0;
-
-    // whether or not we're enabled
-    var enabled = true;
-
-    // intervals
-    var pollInterval = false;
-    var reportInterval = false;
-
-    /**
-     * Polling interval
-     */
-    function onPoll() {
-      var now = BOOMR.now();
-      var delta = now - last;
-
-      last = now;
-
-      // if we're more than 2x the polling interval
-      // + deviation, we missed at least one period completely
-      if (delta > ((POLLING_INTERVAL * 2) + ALLOWED_DEVIATION_MS)) {
-        var missedPolls = Math.floor((delta - POLLING_INTERVAL) / POLLING_INTERVAL);
-
-        total += missedPolls;
-        late += missedPolls;
-        delta -= (missedPolls * POLLING_INTERVAL);
-      }
-
-      // total intervals increased by one
-      total++;
-
-      // late intervals increased by one if we're more than the interval + deviation
-      if (delta > (POLLING_INTERVAL + ALLOWED_DEVIATION_MS)) {
-        late++;
-      }
-    }
-
-    /**
-     * Each reporting interval, log page busy
-     */
-    function onReport() {
-      var reportTime = t.getTimeBucket();
-      var curTime = reportTime;
-      var missedReports = 0;
-
-      if (total === 0) {
-        return;
-      }
-
-      // if we had more polls than we expect in each
-      // collection period (we allow one extra for wiggle room), we
-      // must not have been able to report, so assume those periods were 100%
-      while (total > (POLLS_PER_REPORT + 1) &&
-             missedReports <= MAX_MISSED_REPORTS) {
-        t.set("busy", 100, --curTime);
-
-        // reset the period by one
-        total -= POLLS_PER_REPORT;
-        late   = Math.max(late - POLLS_PER_REPORT, 0);
-
-        // this was a busy period
-        overallTotal += POLLS_PER_REPORT;
-        overallLate += POLLS_PER_REPORT;
-
-        missedReports++;
-      }
-
-      // update the total stats
-      overallTotal += total;
-      overallLate += late;
-
-      t.set("busy", Math.ceil(late / total * 100), reportTime);
-
-      // reset stats
-      total = 0;
-      late = 0;
-    }
-
-    /**
-     * Analyzes Page Busy
-     */
-    function analyze(startTime) {
-      // add data to beacon
-      impl.addToBeacon("c.b", externalMetrics.pageBusy());
-    }
-
-    /**
-     * Disables the monitor
-     */
-    function stop() {
-      enabled = false;
-
-      if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = false;
-      }
-
-      if (reportInterval) {
-        clearInterval(reportInterval);
-        reportInterval = false;
-      }
-    }
-
-    /**
-     * Resets on beacon
-     */
-    function onBeacon() {
-      overallTotal = 0;
-      overallLate = 0;
-    }
-
-    //
-    // External metrics
-    //
-
-    /**
-     * Total Page Busy time
-     */
-    externalMetrics.pageBusy = function() {
-      if (overallTotal === 0) {
-        return 0;
-      }
-
-      return Math.ceil(overallLate / overallTotal * 100);
-    };
-
-    //
-    // Setup
-    //
-    pollInterval = setInterval(onPoll, POLLING_INTERVAL);
-    reportInterval = setInterval(onReport, REPORT_INTERVAL);
-
-    return {
       analyze: analyze,
       stop: stop,
       onBeacon: onBeacon
@@ -4016,11 +3158,6 @@
     //
 
     /**
-     * Whether or not to monitor Page Busy
-     */
-    monitorPageBusy: true,
-
-    /**
      * Whether or not to monitor FPS
      */
     monitorFrameRate: true,
@@ -4063,18 +3200,6 @@
     waitAfterOnload: false,
 
     /**
-     * Whether or not to wait for a call to
-     * frameworkReady() before starting TTI calculations
-     */
-    ttiWaitForFrameworkReady: false,
-
-    /**
-     * If set, wait for the specified CSS selector of hero images to have
-     * loaded before starting TTI calculations
-     */
-    ttiWaitForHeroImages: false,
-
-    /**
      * Whether or not to send a detailed log of all events.
      */
     sendLog: true,
@@ -4114,26 +3239,9 @@
     afterOnloadMonitoring: false,
 
     /**
-     * Framework Ready time, if configured
-     */
-    frameworkReady: null,
-
-    /**
      * Timeline
      */
     timeline: null,
-
-    /**
-     * TTI method used (highest accuracy):
-     * * `raf` (requestAnimationFrame)
-     * * `b` (Page Busy polling)
-     */
-    ttiMethod: null,
-
-    /**
-     * PageBusyMonitor
-     */
-    pageBusyMonitor: null,
 
     /**
      * FrameRateMonitor
@@ -4205,7 +3313,6 @@
      */
     monitors: [
       "timeline",
-      "pageBusyMonitor",
       "frameRateMonitor",
       "scrollMonitor",
       "keyMonitor",
@@ -4285,13 +3392,9 @@
     onBeacon: function(edata) {
       var i;
 
-      // Three types of beacons can go out before the Page Load beacon: Early Beacon, Custom Metric and Custom Timer.
+      // Two types of beacons can go out before the Page Load beacon: Custom Metric and Custom Timer.
       // For those beacon types, we want to keep the vars for the next beacon.
-      if (edata &&
-        (
-          (typeof edata.early !== "undefined") ||
-          (edata["http.initiator"] && edata["http.initiator"].indexOf("api_custom_") === 0)
-        )) {
+      if (edata && (edata["http.initiator"] && edata["http.initiator"].indexOf("api_custom_") === 0)) {
         return;
       }
 
@@ -4341,30 +3444,10 @@
       }
 
       if (impl.waitAfterOnload) {
-        var start = BOOMR.now();
-
-        setTimeout(function checkTti() {
-          // wait for up to the defined time after onload
-          if (BOOMR.now() - start > impl.waitAfterOnload) {
-            // couldn't calculate TTI, send the beacon anyways
-            impl.complete = true;
-            BOOMR.sendBeacon();
-          }
-          else {
-            // run the TTI calculation
-            impl.timeline.analyze();
-
-            // if we got something, mark as complete and send
-            if (externalMetrics.timeToInteractive()) {
-              impl.complete = true;
-              BOOMR.sendBeacon();
-            }
-            else {
-              // poll again
-              setTimeout(checkTti, TIME_TO_INTERACTIVE_WAIT_POLL_PERIOD);
-            }
-          }
-        }, TIME_TO_INTERACTIVE_WAIT_POLL_PERIOD);
+        setTimeout(function() {
+          impl.complete = true;
+          BOOMR.sendBeacon();
+        }, impl.waitAfterOnload);
       }
       else {
         impl.complete = true;
@@ -4400,8 +3483,6 @@
     /**
      * Initializes the plugin.
      *
-     * @param {boolean} [config.Continuity.monitorPageBusy=true] Whether or not to
-     * monitor Page Busy.
      * @param {boolean} [config.Continuity.monitorFrameRate=true] Whether or not to
      * monitor Frame Rate.
      * @param {boolean} [config.Continuity.monitorInteractions=true] Whether or not to
@@ -4411,7 +3492,7 @@
      * @param {boolean} [config.Continuity.monitorLayoutShifts=true] Whether or not to
      * monitor Layout Shifts
      * @param {boolean} [config.Continuity.afterOnload=false] Whether or not to
-     * monitor Long Tasks, Page Busy, Frame Rate, interactions and Page Statistics
+     * monitor Frame Rate, interactions and Page Statistics
      * after `onload` (up to `afterOnloadMaxLength`).
      * @param {number} [config.Continuity.afterOnloadMaxLength=60000] Maximum time
      * (milliseconds) after `onload` to monitor.
@@ -4421,12 +3502,6 @@
      * @param {boolean|number} [config.Continuity.waitAfterOnload=false] If set
      * to a `number`, how long after `onload` to wait for Time to Interactive to
      * happen before sending a beacon (without TTI).
-     * @param {boolean} [config.Continuity.ttiWaitForFrameworkReady=false] Whether
-     * or not to wait for {@link BOOMR.plugins.Continuity.frameworkReady} before
-     * Visually Ready (and thus Time to Interactive) can happen.
-     * @param {boolean|string} [config.Continuity.ttiWaitForHeroImages=false] If
-     * set to a `string`, the CSS selector will wait until the specified images
-     * have been loaded before Visually Ready (and thus Time to Interactive) can happen.
      * @param {boolean} [config.Continuity.sendLog=true] Whether or not to
      * send the event log with each beacon.
      * @param {boolean} [config.Continuity.logMaxEntries=100] How many log
@@ -4439,9 +3514,9 @@
      */
     init: function(config) {
       BOOMR.utils.pluginConfig(impl, config, "Continuity",
-        ["monitorPageBusy", "monitorFrameRate", "monitorInteractions",
+        ["monitorFrameRate", "monitorInteractions",
           "monitorStats", "afterOnload", "afterOnloadMaxLength", "afterOnloadMinWait",
-          "waitAfterOnload", "ttiWaitForFrameworkReady", "ttiWaitForHeroImages",
+          "waitAfterOnload",
           "sendLog", "logMaxEntries", "sendTimeline", "monitorLayoutShifts"]);
 
       if (impl.initialized) {
@@ -4463,27 +3538,6 @@
         if (impl.monitorFrameRate &&
             typeof BOOMR.window.requestAnimationFrame === "function") {
           impl.frameRateMonitor = new FrameRateMonitor(BOOMR.window, impl.timeline);
-
-          if (!impl.ttiMethod) {
-            impl.ttiMethod = "raf";
-          }
-        }
-
-        //
-        // Page Busy (if LongTasks aren't supported or aren't enabled)
-        //
-        if (impl.monitorPageBusy &&
-          BOOMR.window &&
-          (!BOOMR.window.PerformanceObserver || !BOOMR.window.PerformanceLongTaskTiming) &&
-          // Don't use Page Busy for Firefox, as setInterval is de-prioritized during Page Load
-          // https://bugzilla.mozilla.org/show_bug.cgi?id=1270059
-          (BOOMR.window.navigator &&
-            (BOOMR.window.navigator.userAgentData || !BOOMR.window.navigator.userAgent.match(/Firefox\//)))) {
-          impl.pageBusyMonitor = new PageBusyMonitor(BOOMR.window, impl.timeline);
-
-          if (!impl.ttiMethod) {
-            impl.ttiMethod = "b";
-          }
         }
 
         //
@@ -4517,7 +3571,6 @@
 
       // add epoch and polling method to every beacon
       BOOMR.addVar("c.e", epoch.toString(36));
-      BOOMR.addVar("c.tti.m", impl.ttiMethod);
 
       // event handlers
       BOOMR.subscribe("before_beacon", impl.onBeforeBeacon, null, impl);
@@ -4534,17 +3587,7 @@
      * @memberof BOOMR.plugins.Continuity
      */
     is_complete: function(vars) {
-      // allow error and early beacons to go through even if we're not complete
-      return impl.complete || (vars && (vars["http.initiator"] === "error" || typeof vars.early !== "undefined"));
-    },
-
-    /**
-     * Signal that the framework is ready
-     *
-     * @memberof BOOMR.plugins.Continuity
-     */
-    frameworkReady: function() {
-      impl.frameworkReady = BOOMR.now();
+      return impl.complete;
     },
 
     // external metrics
@@ -4555,7 +3598,6 @@
     decompressBucketLog: decompressBucketLog,
     decompressBucketLogNumber: decompressBucketLogNumber,
     decompressLog: decompressLog,
-    determineTti: determineTti,
     compressClsScore: compressClsScore,
     decompressClsScore: decompressClsScore,
     compressClsSources: compressClsSources,
